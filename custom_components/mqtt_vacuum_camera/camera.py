@@ -8,13 +8,11 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from io import BytesIO
-import os
 from pathlib import Path
 import time
 from typing import Optional
 
 from aiohttp import web
-from PIL import Image
 
 from homeassistant import config_entries, core
 from homeassistant.components.camera import Camera, CameraEntityFeature
@@ -123,7 +121,6 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
 
         # 5. Image state (grouped)
         self.image_state = CameraImageState()
-        self._cached_png: bytes | None = None
         self._cached_jpeg: bytes | None = None
 
         # 6. Processors (grouped)
@@ -326,6 +323,8 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
             ATTR_VACUUM_TOPIC: self.mqtt.topic,
         }
         attributes.update(attr_data)
+        # Override content_type to match the actual image_format setting
+        attributes["content_type"] = self.context.shared.image_format
         return attributes
 
     @property
@@ -388,14 +387,21 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
         return self.context.shared.vacuum_state
 
     async def async_update(self):
-        """Camera Frame Update."""
+        """
+        Camera Frame Update.
+
+        Updates internal state only. Home Assistant calls camera_image()
+        separately to retrieve the cached image data.
+        """
 
         # Obstacle View Processing
         if self.context.shared.camera_mode == CameraModes.OBSTACLE_VIEW:
             obstacle_image = self.processors.obstacle_view.get_obstacle_image()
             if obstacle_image is not None:
                 self.image_state.main_image = obstacle_image
-                return obstacle_image
+                # Notify HA that camera image has changed
+                self.async_write_ha_state()
+            return
 
         if self.context.shared.camera_mode == CameraModes.MAP_VIEW:
             # if the vacuum is working, or it is the first image.
@@ -423,12 +429,26 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
                         ),
                         timeout=RENDER_TIMEOUT_S,
                     )
+                    # Reset timeout counter on successful processing
+                    self.settings.timeout_counter = 0
                 except asyncio.TimeoutError:
-                    LOGGER.warning("%s: Time out in rendering!", self.context.file_name)
-                    return self.camera_image(
-                        self.image_state.width, self.image_state.height
-                    )
-        return self.camera_image(self.image_state.width, self.image_state.height)
+                    # Increment timeout counter (initialize if missing for existing instances)
+                    current_count = getattr(self.settings, "timeout_counter", 0)
+                    self.settings.timeout_counter = current_count + 1
+
+                    # Warn after 5 consecutive timeouts
+                    if self.settings.timeout_counter >= 5:
+                        LOGGER.warning(
+                            "%s: Rendering timeout occurred %d consecutive times!",
+                            self.context.file_name,
+                            self.settings.timeout_counter,
+                        )
+                    else:
+                        LOGGER.debug(
+                            "%s: Time out in rendering! (count: %d)",
+                            self.context.file_name,
+                            self.settings.timeout_counter,
+                        )
 
     async def _process_parsed_json(self, test_mode: bool = False):
         """Process the parsed JSON data and return the generated image."""
@@ -501,17 +521,15 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
             LOGGER.error("Thread pool error: %s", str(e), exc_info=True)
             return None
 
-    def _convert_to_jpeg(self, png_bytes: bytes) -> bytes:
-        """Convert PNG image bytes to JPEG. Cached on input equality."""
-        if png_bytes == self._cached_png:
+    def _ensure_jpeg(self, jpeg_bytes: bytes) -> bytes:
+        """Ensure JPEG bytes are cached and return them.
+
+        Since valetudo_map_parser now provides JPEG bytes directly via
+        shared.image_format='image/jpeg', no conversion is needed.
+        This method just caches the bytes to avoid redundant processing.
+        """
+        if jpeg_bytes == self._cached_jpeg:
             return self._cached_jpeg
-        img = Image.open(BytesIO(png_bytes))
-        if img.mode in ("RGBA", "LA", "PA"):
-            img = img.convert("RGB")
-        buf = BytesIO()
-        img.save(buf, format="JPEG", quality=85)
-        jpeg_bytes = buf.getvalue()
-        self._cached_png = png_bytes
         self._cached_jpeg = jpeg_bytes
         return jpeg_bytes
 
@@ -534,11 +552,11 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
         try:
             while True:
                 last_fetch = time.monotonic()
-                png_bytes = await self.async_camera_image()
-                if png_bytes is None:
+                jpeg_bytes = await self.async_camera_image()
+                if jpeg_bytes is None:
                     break
                 jpeg_bytes = await self.hass.async_add_executor_job(
-                    self._convert_to_jpeg, png_bytes
+                    self._ensure_jpeg, jpeg_bytes
                 )
                 await response.write(
                     bytes(

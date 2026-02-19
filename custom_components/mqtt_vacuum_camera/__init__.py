@@ -4,9 +4,7 @@ Version: 2025.10.0
 """
 
 from functools import partial
-import os
 from pathlib import Path
-from typing import Optional
 import zipfile
 
 from homeassistant import config_entries, core
@@ -74,7 +72,7 @@ def init_shared_data(
     shared_manager = CameraSharedManager(file_name, dict(device_info))
     shared = shared_manager.get_instance()
     shared.vacuum_status_font = f"{get_default_font_path()}/FiraSans.ttf"
-
+    shared.set_content_type("jpeg")
     return shared, file_name
 
 
