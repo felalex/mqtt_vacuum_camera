@@ -86,6 +86,7 @@ class BoundedExecutor:
                         RuntimeError("dropped: newer job preferred")
                     )
                 except Exception:
+                    # Intentionally suppress: future may already be cancelled/done
                     pass
                 with self._stats_lock:
                     self._dropped += 1
@@ -121,6 +122,8 @@ class ThreadPoolManager:
 
     _instances: Dict[str, ThreadPoolManager] = {}
     _instances_lock = threading.Lock()
+    _pool_lock: threading.Lock
+    _pools: Dict[str, BoundedExecutor]
 
     def __new__(cls, vacuum_id: str = "default"):
         with cls._instances_lock:
@@ -302,6 +305,8 @@ class ThreadPoolManager:
         LOGGER.debug("Shutting down all thread pools across all instances")
         instances = list(cls._instances.items())
         for _, instance in instances:
+            # pylint: disable=protected-access
+            # Intentional: shutdown_all() needs to access all instances' pools
             for pool_name, pool in list(instance._pools.items()):
                 LOGGER.debug("Shutdown for pool: %s", pool_name)
                 try:

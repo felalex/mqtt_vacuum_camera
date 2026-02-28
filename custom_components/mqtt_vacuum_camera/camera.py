@@ -191,7 +191,7 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
             processor=processor,
             decompression=decompression,
             thread_pool=thread_pool,
-            colours=colours,
+            colors=colours,
             obstacle_view=obstacle_view,
         )
 
