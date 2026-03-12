@@ -27,7 +27,7 @@ LOGGER.propagate = True
 
 class CameraProcessor:
     """
-    CameraProcessor class to process the image data from the Vacuum JASON data.
+    CameraProcessor class to process the image data from the Vacuum JSON data.
     """
 
     def __init__(self, hass, camera_shared, thread_pool: ThreadPoolManager):
