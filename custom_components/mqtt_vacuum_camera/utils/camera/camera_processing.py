@@ -33,10 +33,10 @@ class CameraProcessor:
     def __init__(self, hass, camera_shared, thread_pool: ThreadPoolManager):
         self.hass = hass
         self._shared = camera_shared
-        if self._shared.is_rand:
-            self._re_handler = ReImageHandler(camera_shared)
-        elif self._shared.is_conga:
+        if self._shared.is_conga:
             self._conga_handler = CongaMapImageHandler(camera_shared)
+        elif self._shared.is_rand:
+            self._re_handler = ReImageHandler(camera_shared)
         else:
             self._map_handler = HypferMapImageHandler(camera_shared)
         self._thread_pool = thread_pool
@@ -130,17 +130,17 @@ class CameraProcessor:
     def run_process_valetudo_data(self, parsed_json: JsonType):
         """Async function to process the image data from the Vacuum JSON data."""
         try:
-            if self._shared.is_rand:
-                result = self._thread_pool.run_async_in_executor(
-                    "camera_processing",
-                    self.async_process_rand256_data,
-                    parsed_json,
-                )
-            elif self._shared.is_conga:
+            if self._shared.is_conga:
                 result = self._thread_pool.run_async_in_executor(
                     "camera_processing",
                     self.async_process_conga_data,
                     parsed_json
+                )
+            elif self._shared.is_rand:
+                result = self._thread_pool.run_async_in_executor(
+                    "camera_processing",
+                    self.async_process_rand256_data,
+                    parsed_json,
                 )
             else:
                 result = self._thread_pool.run_async_in_executor(
@@ -156,7 +156,12 @@ class CameraProcessor:
 
     def get_frame_number(self):
         """Get the frame number."""
-        return self._map_handler.get_frame_number() - 2
+        if self._shared.is_conga:
+            return self._conga_handler.get_frame_number() - 2
+        elif self._shared.is_rand:
+            return self._re_handler.get_frame_number()
+        else:
+            return self._map_handler.get_frame_number() - 2
 
     @staticmethod
     async def download_image(url: str, set_timeout: int = 6):

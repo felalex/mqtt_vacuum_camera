@@ -157,6 +157,10 @@ def is_rand256_vacuum(vacuum_device: DeviceEntry) -> bool:
         manufacturer.lower()
     ).startswith("valetudo"):
         return False  # This is a Hypfer vacuum (Valetudo)
+    if (sof_version.lower()).startswith("congaduto") or (
+        manufacturer.lower()
+    ).startswith("cecotec"):
+        return False  # This is a Conga vacuum (Congaduto)
     return True
 
 
