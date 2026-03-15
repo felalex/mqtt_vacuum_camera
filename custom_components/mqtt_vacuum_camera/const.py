@@ -491,6 +491,8 @@ DECODED_TOPICS = {
     "/BatteryStateAttribute/level",
     "/WifiConfigurationCapability/ips",
     "/AttachmentStateAttribute/mop",
+    "/AttachmentStateAttribute/dustbin",
+    "/AttachmentStateAttribute/watertank",
     "/OperationModeControlCapability/preset",
     "/WaterUsageControlCapability/preset",
     "/DockStatusStateAttribute/status",
